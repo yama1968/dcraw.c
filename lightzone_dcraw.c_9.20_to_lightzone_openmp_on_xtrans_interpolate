@@ -1,0 +1,66 @@
+--- /home/yannick/Work/w/LightZone/lightcrafts/coprocesses/dcraw/dcraw.c	2014-04-22 22:28:51.107896365 +0200
++++ pdcraw.lightzone.c	2014-04-30 20:30:09.923889243 +0200
+@@ -19,8 +19,8 @@
+    *If you have not modified dcraw.c in any way, a link to my
+    homepage qualifies as "full source code".
+ 
+-   $Revision: 1.461 $
+-   $Date: 2014/01/31 04:05:31 $
++   $Revision: 1.1 $
++   $Date: 2014/04/28 18:19:20 $
+  */
+ 
+ #define DCRAW_VERSION "9.20"
+@@ -42,6 +42,10 @@
+ #include <time.h>
+ #include <sys/types.h>
+ 
++#if defined(_OPENMP)
++#include <omp.h>
++#endif
++
+ #if defined(DJGPP) || defined(__MINGW32__)
+ #define fseeko fseek
+ #define ftello ftell
+@@ -4301,7 +4305,13 @@
+    char (*homo)[TS][TS], *buffer;
+ 
+   if (verbose)
+-    fprintf (stderr,_("%d-pass X-Trans interpolation...\n"), passes);
++#if defined(_OPENMP)
++    fprintf (stderr,_("%d-pass X-Trans interpolation with %d max threads...\n"), 
++	     passes, omp_get_max_threads ());
++#else
++    fprintf (stderr,_("%d-pass X-Trans interpolation...\n"), 
++	     passes);
++#endif
+ 
+   cielab (0,0);
+   border_interpolate(6);
+@@ -4445,6 +4455,7 @@
+ 	      }
+ 	  }
+       }
++
+       rgb = (ushort(*)[TS][TS][3]) buffer;
+       mrow -= top;
+       mcol -= left;
+@@ -4454,7 +4465,9 @@
+ 	for (row=2; row < mrow-2; row++)
+ 	  for (col=2; col < mcol-2; col++)
+ 	    cielab (rgb[d][row][col], lab[row][col]);
+-	for (f=dir[d & 3],row=3; row < mrow-3; row++)
++	f=dir[d & 3];
++#pragma omp parallel for private (row, col, lix, g) // oui, pas mauvais --> 0.5 sec => YY2
++	for (row=3; row < mrow-3; row++)
+ 	  for (col=3; col < mcol-3; col++) {
+ 	    lix = &lab[row][col];
+ 	    g = 2*lix[0][0] - lix[f][0] - lix[-f][0];
+@@ -4466,6 +4479,7 @@
+ 
+ /* Build homogeneity maps from the derivatives:			*/
+       memset(homo, 0, ndir*TS*TS);
++#pragma omp parallel for private (row, col, tr, d, v, h) // safe et de 11 à 8! => YY1
+       for (row=4; row < mrow-4; row++)
+ 	for (col=4; col < mcol-4; col++) {
+ 	  for (tr=FLT_MAX, d=0; d < ndir; d++)
